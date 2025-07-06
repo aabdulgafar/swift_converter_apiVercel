@@ -41,10 +41,32 @@ async def mt101_to_pain001(request: Request):
 </Document>"""
 
     return xml
+# @app.post("/convert/mt101-to-json", response_class=JSONResponse)
+# async def mt101_to_json(request: Request):
+#     mt_text = (await request.body()).decode("utf-8")
+#     result = {}
+#
+#     current_tag = None
+#     for line in mt_text.splitlines():
+#         line = line.strip()
+#         if line.startswith(":") and ":" in line[1:]:
+#             parts = line[1:].split(":", 1)
+#             current_tag = parts[0]
+#             result[current_tag] = parts[1].strip()
+#         elif current_tag:
+#             result[current_tag] += " " + line
+#
+#     return result
 @app.post("/convert/mt101-to-json", response_class=JSONResponse)
 async def mt101_to_json(request: Request):
     mt_text = (await request.body()).decode("utf-8")
     result = {}
+
+    # Extract only content inside {4:...-}
+    if "{4:" in mt_text and "-}" in mt_text:
+        mt_text = mt_text.split("{4:")[1].split("-}")[0]
+    else:
+        return {"error": "Invalid MT101 block: missing {4:...-}"}
 
     current_tag = None
     for line in mt_text.splitlines():
@@ -54,6 +76,6 @@ async def mt101_to_json(request: Request):
             current_tag = parts[0]
             result[current_tag] = parts[1].strip()
         elif current_tag:
-            result[current_tag] += " " + line
+            result[current_tag] += " " + line.strip()
 
     return result
