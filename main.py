@@ -1,30 +1,59 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-from converters.mt_to_json import convert_mt_to_json
-from converters.json_to_mx import convert_json_to_mx
-from converters.mx_to_json import convert_mx_to_json
-from converters.json_to_mt import convert_json_to_mt
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse, JSONResponse
 
 app = FastAPI()
 
-class RawMessage(BaseModel):
-    message: str
 
-class JSONMessage(BaseModel):
-    data: dict
+@app.post("/convert/mt101-to-pain001", response_class=PlainTextResponse)
+async def mt101_to_pain001(request: Request):
+    mt_text = (await request.body()).decode("utf-8")
 
-@app.post("/convert/mt/to/json")
-def mt_to_json_api(payload: RawMessage):
-    return {"jsonMT": convert_mt_to_json(payload.message)}
+    def extract(tag):
+        for line in mt_text.splitlines():
+            if line.startswith(f":{tag}:"):
+                return line[len(tag) + 2:].strip()
+        return ""
 
-@app.post("/convert/jsonmt/to/mx")
-def jsonmt_to_mx_api(payload: JSONMessage):
-    return {"mx": convert_json_to_mx(payload.data)}
+    msg_id = extract("20")
+    sender = extract("50C")
+    receiver = extract("59")
+    amount = extract("32B").replace("GBP", "").replace(",", "").strip()
 
-@app.post("/convert/mx/to/json")
-def mx_to_json_api(payload: RawMessage):
-    return {"jsonMX": convert_mx_to_json(payload.message)}
+    xml = f"""<Document>
+  <CstmrCdtTrfInitn>
+    <GrpHdr>
+      <MsgId>{msg_id}</MsgId>
+    </GrpHdr>
+    <PmtInf>
+      <Dbtr>
+        <Nm>{sender}</Nm>
+      </Dbtr>
+      <CdtTrfTxInf>
+        <Amt>
+          <InstdAmt Ccy="GBP">{amount}</InstdAmt>
+        </Amt>
+        <Cdtr>
+          <Nm>{receiver}</Nm>
+        </Cdtr>
+      </CdtTrfTxInf>
+    </PmtInf>
+  </CstmrCdtTrfInitn>
+</Document>"""
 
-@app.post("/convert/jsonmx/to/mt")
-def jsonmx_to_mt_api(payload: JSONMessage):
-    return {"mt": convert_json_to_mt(payload.data)}
+    return xml
+@app.post("/convert/mt101-to-json", response_class=JSONResponse)
+async def mt101_to_json(request: Request):
+    mt_text = (await request.body()).decode("utf-8")
+    result = {}
+
+    current_tag = None
+    for line in mt_text.splitlines():
+        line = line.strip()
+        if line.startswith(":") and ":" in line[1:]:
+            parts = line[1:].split(":", 1)
+            current_tag = parts[0]
+            result[current_tag] = parts[1].strip()
+        elif current_tag:
+            result[current_tag] += " " + line
+
+    return result
